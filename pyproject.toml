@@ -16,6 +16,10 @@ dependencies = [
     "langchain-fireworks>=0.1.7",
     "python-dotenv>=1.0.1",
     "langchain-tavily>=0.1",
+    "fastapi>=0.115.0",
+    "uvicorn>=0.32.0",
+    "httpx>=0.28.0",
+    "pydantic>=2.10.0",
 ]
 
 
