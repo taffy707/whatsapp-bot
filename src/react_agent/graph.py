@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from typing import Dict, List, Literal, cast
 
 from langchain_core.messages import AIMessage
+from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import StateGraph
 from langgraph.prebuilt import ToolNode
 from langgraph.runtime import Runtime
@@ -112,5 +113,9 @@ builder.add_conditional_edges(
 # This creates a cycle: after using tools, we always return to the model
 builder.add_edge("tools", "call_model")
 
-# Compile the builder into an executable graph
-graph = builder.compile(name="ReAct Agent")
+# Create checkpointer for conversation memory persistence
+# InMemorySaver stores state in memory - use a persistent checkpointer for production
+checkpointer = InMemorySaver()
+
+# Compile the builder into an executable graph with checkpointer for memory
+graph = builder.compile(name="ReAct Agent", checkpointer=checkpointer)

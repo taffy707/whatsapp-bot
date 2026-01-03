@@ -104,7 +104,10 @@ async def receive_message(webhook_data: WebhookMessage) -> Dict[str, str]:
                         await client.mark_message_as_read(message_id)
 
                         # Process message through LangGraph agent
-                        agent_response = await process_with_agent(text_body)
+                        # Use phone number as thread_id for conversation memory
+                        agent_response = await process_with_agent(
+                            text_body, thread_id=from_number
+                        )
 
                         # Send response back to WhatsApp
                         await client.send_message(
@@ -121,11 +124,12 @@ async def receive_message(webhook_data: WebhookMessage) -> Dict[str, str]:
         return {"status": "error", "message": str(e)}
 
 
-async def process_with_agent(user_message: str) -> str:
+async def process_with_agent(user_message: str, thread_id: str) -> str:
     """Process user message through the LangGraph agent.
 
     Args:
         user_message: The user's text message.
+        thread_id: Unique identifier for the conversation thread (e.g., phone number).
 
     Returns:
         The agent's response as a string.
@@ -135,9 +139,11 @@ async def process_with_agent(user_message: str) -> str:
         context = Context()
 
         # Invoke the agent with the user's message
+        # thread_id enables conversation memory - same thread_id = same conversation
         result = await graph.ainvoke(
             {"messages": [("user", user_message)]},
             context=context,
+            config={"configurable": {"thread_id": thread_id}},
         )
 
         # Extract the last message from the agent's response
