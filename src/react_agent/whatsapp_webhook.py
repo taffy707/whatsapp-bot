@@ -2,17 +2,7 @@
 
 import os
 import sys
-from typing import Any, Dict, Optional
-
-# WhatsApp messages and agent replies routinely contain non-ASCII text (emoji,
-# the °C degree symbol, etc.). On Windows the console defaults to cp1252, so a
-# bare print() of such text raises UnicodeEncodeError and would abort the whole
-# webhook handler before a reply is sent. Force UTF-8 on the log streams.
-for _stream in (sys.stdout, sys.stderr):
-    try:
-        _stream.reconfigure(encoding="utf-8")
-    except (AttributeError, ValueError):
-        pass
+from typing import Any, Dict, Optional, cast
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request, Response
@@ -21,6 +11,15 @@ from pydantic import BaseModel
 from react_agent import graph
 from react_agent.context import Context
 from react_agent.whatsapp_client import WhatsAppClient
+
+# WhatsApp messages and agent replies routinely contain non-ASCII text (emoji,
+# the °C degree symbol, etc.). On Windows the console defaults to cp1252, so a
+# bare print() of such text raises UnicodeEncodeError and would abort the whole
+# webhook handler before a reply is sent. Force UTF-8 on the log streams.
+for _stream in (sys.stdout, sys.stderr):
+    _reconfigure = getattr(_stream, "reconfigure", None)
+    if _reconfigure is not None:
+        _reconfigure(encoding="utf-8")
 
 # Load environment variables from .env file
 load_dotenv()
@@ -152,7 +151,7 @@ async def process_with_agent(user_message: str, thread_id: str) -> str:
         # Invoke the agent with the user's message
         # thread_id enables conversation memory - same thread_id = same conversation
         result = await graph.ainvoke(
-            {"messages": [("user", user_message)]},
+            cast(Any, {"messages": [("user", user_message)]}),
             context=context,
             config={"configurable": {"thread_id": thread_id}},
         )

@@ -1,7 +1,7 @@
 """WhatsApp Business API client for sending messages."""
 
 import os
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, cast
 
 import httpx
 from pydantic import BaseModel
@@ -87,7 +87,7 @@ class WhatsAppClient:
                 print(f"WhatsApp API Error ({response.status_code}): {error_detail}")
 
             response.raise_for_status()
-            return response.json()
+            return cast(Dict[str, Any], response.json())
 
     async def mark_message_as_read(self, message_id: str) -> Dict[str, Any]:
         """Mark a message as read.
@@ -118,7 +118,7 @@ class WhatsAppClient:
                 timeout=30.0,
             )
             response.raise_for_status()
-            return response.json()
+            return cast(Dict[str, Any], response.json())
 
     async def get_business_account_info(self) -> Dict[str, Any]:
         """Get WhatsApp Business Account information.
@@ -141,4 +141,4 @@ class WhatsAppClient:
                 timeout=30.0,
             )
             response.raise_for_status()
-            return response.json()
+            return cast(Dict[str, Any], response.json())
