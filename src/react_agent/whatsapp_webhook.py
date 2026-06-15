@@ -1,7 +1,18 @@
 """WhatsApp webhook server for receiving and processing messages."""
 
 import os
+import sys
 from typing import Any, Dict, Optional
+
+# WhatsApp messages and agent replies routinely contain non-ASCII text (emoji,
+# the °C degree symbol, etc.). On Windows the console defaults to cp1252, so a
+# bare print() of such text raises UnicodeEncodeError and would abort the whole
+# webhook handler before a reply is sent. Force UTF-8 on the log streams.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        pass
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request, Response

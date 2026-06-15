@@ -4,7 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a LangGraph ReAct (Reasoning and Action) agent template that implements a tool-calling agent designed to work with LangGraph Studio. The agent iteratively reasons about user queries, executes actions using available tools, and provides responses based on observations.
+This is a **WhatsApp bot** that exposes a LangGraph ReAct (Reasoning and Action) agent to users over WhatsApp. The agent is configured as a **Pulse Technologies Medical Equipment Troubleshooting Expert** that diagnoses GeneXpert Dx System error codes (the entire domain knowledge base lives in the system prompt at `src/react_agent/prompts.py`).
+
+It is built on top of the LangGraph ReAct agent template (which still runs standalone in LangGraph Studio). Two layers stacked together:
+
+1. **The agent** (`src/react_agent/`) — a tool-calling ReAct graph that iteratively reasons, optionally calls tools, then responds. Runnable on its own via LangGraph Studio.
+2. **The WhatsApp integration** (`whatsapp_webhook.py` + `whatsapp_client.py`) — a FastAPI server that receives WhatsApp messages via webhook, runs them through the agent, and sends responses back via the WhatsApp Business (Meta Graph) API.
+
+See `WHATSAPP_SETUP.md` for the full Meta/Facebook configuration walkthrough. Note: `README.md` is the original upstream template README and describes only the base agent — it is **not** specific to this project.
 
 ## Development Commands
 
@@ -54,7 +61,45 @@ This project uses `uv` for dependency management. Install dependencies with:
 uv pip install -r pyproject.toml
 ```
 
+### Running the WhatsApp server
+The FastAPI webhook app is `react_agent.whatsapp_webhook:app`, served on port 8000:
+```bash
+# Run the webhook server directly (hot reload)
+python -m uvicorn react_agent.whatsapp_webhook:app --host 0.0.0.0 --port 8000 --reload
+
+# Or use the helper script (starts ngrok tunnel + server, prints the webhook URL)
+./start.sh
+```
+Endpoints: `GET /webhook` (Meta verification handshake), `POST /webhook` (incoming messages), `GET /health`. For local development the webhook must be reachable from Meta over HTTPS — use ngrok (`ngrok http 8000`) and register `https://<tunnel>/webhook` in Meta Business Suite.
+
+### Running the agent standalone
+```bash
+# LangGraph Studio / dev server (entry point is langgraph.json -> graph.py:graph)
+langgraph dev
+```
+
 ## Architecture
+
+### WhatsApp Layer (`whatsapp_webhook.py`, `whatsapp_client.py`)
+
+Message flow:
+
+```text
+User WhatsApp message
+  → Meta WhatsApp Business API
+  → POST /webhook (whatsapp_webhook.py)
+  → mark_message_as_read + process_with_agent (graph.ainvoke)
+  → WhatsAppClient.send_message
+  → Meta API → User
+```
+
+- `whatsapp_webhook.py` parses the Meta webhook payload, **only handling `type == "text"` messages** (media/other types are silently ignored). `GET /webhook` implements Meta's verification handshake by echoing `hub.challenge` when `hub.verify_token` matches `WHATSAPP_VERIFY_TOKEN`.
+- `process_with_agent()` invokes the compiled `graph` with the message, then extracts the final message's text content (handling both string and multipart-list content shapes).
+- `whatsapp_client.py` (`WhatsAppClient`) wraps the Meta Graph API (`https://graph.facebook.com/v21.0`) using `httpx`. It reads credentials from env at construction and raises if any are missing. The client is lazily instantiated as a module global on first request.
+
+### Conversation Memory
+
+The graph is compiled with an `InMemorySaver` checkpointer (`graph.py`). The webhook passes the **sender's phone number as the `thread_id`** (`config={"configurable": {"thread_id": from_number}}`), so each user gets an isolated, persistent conversation. **Important:** `InMemorySaver` is process-memory only — all conversation history is lost on restart. Swap in a persistent checkpointer (e.g. SQLite/Postgres saver) for production.
 
 ### Core Graph Structure (`src/react_agent/graph.py`)
 
@@ -116,12 +161,18 @@ Defines the graph entry point as `./src/react_agent/graph.py:graph` and loads en
    - `ANTHROPIC_API_KEY` - For Claude models (default)
    - `OPENAI_API_KEY` - If using OpenAI models
    - `TAVILY_API_KEY` - For the search tool
+3. Add WhatsApp Business API credentials (required only when running the webhook server):
+   - `WHATSAPP_ACCESS_TOKEN` - Meta access token (temporary tokens expire in 24h; use a System User token for production)
+   - `WHATSAPP_PHONE_NUMBER_ID` - sender phone number ID
+   - `WHATSAPP_BUSINESS_ACCOUNT_ID` - WABA ID
+   - `WHATSAPP_VERIFY_TOKEN` - **a string you invent**; must match the value entered in Meta's webhook config
+   - `WHATSAPP_APP_ID`, `WHATSAPP_APP_SECRET` - app credentials
 
 ## Customization Points
 
 - **Add tools**: Define functions in `tools.py` and add to `TOOLS` list
 - **Change model**: Update `model` in Context or pass via runtime config
-- **Modify system prompt**: Update `prompts.SYSTEM_PROMPT` or pass via Context
+- **Modify system prompt / troubleshooting knowledge**: `prompts.SYSTEM_PROMPT` is the GeneXpert error-code knowledge base (the bot's entire domain expertise is encoded here as prose, not in code/data). Edit it to add error codes, change persona, or update the Pulse Technologies contact block that every response must append.
 - **Extend state**: Add fields to State dataclass for additional tracking
 - **Adjust graph flow**: Modify nodes/edges in `graph.py` builder
 
